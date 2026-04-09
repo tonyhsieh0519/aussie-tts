@@ -1,50 +1,42 @@
-// src/app/api/tts/route.ts
-
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+
+// Initialize Supabase Client
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(request: Request) {
   try {
     const { text } = await request.json();
     const apiKey = process.env.ELEVEN_LABS_API_KEY;
+    const CHARLIE_VOICE_ID = 'IKne3meq5aSn9XLyUdCD'; 
 
-    if (!apiKey) {
-      return NextResponse.json({ error: 'API Key missing' }, { status: 500 });
-    }
-
-    // PASTE BAXTER'S VOICE ID HERE
-    const BAXTER_VOICE_ID = 'IKne3meq5aSn9XLyUdCD'; 
-
-    const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${BAXTER_VOICE_ID}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'xi-api-key': apiKey,
-        },
-        body: JSON.stringify({
-          text: text,
-          model_id: 'eleven_multilingual_v2', 
-          voice_settings: {
-            stability: 0.5,       // Lower = more emotive, Higher = more stable
-            similarity_boost: 0.8, // Enhances the "Baxter" signature sound
-          },
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('ElevenLabs Error:', errorData);
-      return NextResponse.json({ error: 'Failed to generate audio' }, { status: response.status });
-    }
-
-    const audioBuffer = await response.arrayBuffer();
-
-    return new Response(audioBuffer, {
-      headers: { 'Content-Type': 'audio/mpeg' },
+    // 1. Logic to call ElevenLabs (Keep your existing fetch code here...)
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${CHARLIE_VOICE_ID}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'xi-api-key': apiKey! },
+      body: JSON.stringify({ text, model_id: 'eleven_multilingual_v2' }),
     });
+
+    if (response.ok) {
+      // 2. NEW: Log the request to Supabase
+      // We do this "in the background" so the user doesn't wait for the DB
+      await supabase.from('speech_logs').insert([
+        { 
+          input_text: text, 
+          voice_id: CHARLIE_VOICE_ID,
+          character_count: text.length 
+        }
+      ]);
+
+      const audioBuffer = await response.arrayBuffer();
+      return new Response(audioBuffer, { headers: { 'Content-Type': 'audio/mpeg' } });
+    }
+
+    return NextResponse.json({ error: 'API Error' }, { status: response.status });
   } catch (error) {
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ error: 'Server Error' }, { status: 500 });
   }
 }
